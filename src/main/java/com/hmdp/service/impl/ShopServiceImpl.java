@@ -14,8 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -37,6 +36,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     /**
      * 根据id查询商铺信息
+     * 缓存穿透
+     * 1.缓存一个空值（目前先使用这个）
+     * 2.使用布隆过滤器加以判断
      * @param id
      * @return
      */
@@ -46,14 +48,20 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String shopjson = stringRedisTemplate.opsForValue().get(key);
 
         // 命中缓存，直接返回
-        if (shopjson != null) {
+        if (shopjson != null && !shopjson.isEmpty()) {
             return Result.ok(objectMapper.readValue(shopjson, Shop.class));
+        }
+
+        // 采用缓存空对象来解决缓存穿透问题
+        if (shopjson.isEmpty()) {
+            return Result.fail("店铺不存在");
         }
 
         // 没有命中缓存，要查询数据库
         Shop shop = shopMapper.selectById(id);
         // 数据库中不存在，返回错误信息
         if (shop == null) {
+            stringRedisTemplate.opsForValue().set(key, null, CACHE_SHOP_NULL_TTL, TimeUnit.MINUTES);
             return Result.fail("店铺不存在");
         }
         // 存在，加入缓存，返回信息
