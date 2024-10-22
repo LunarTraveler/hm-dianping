@@ -12,6 +12,8 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
+import com.hmdp.utils.RedisConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -42,6 +44,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     private final ShopMapper shopMapper;
 
+    private final CacheClient cacheClient;
+
     // 线程池(大小为10)
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
@@ -58,14 +62,21 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 解决缓存穿透
 //        Shop shop = queryWithPassThrough(id);
 //        return Result.ok(shop);
+        // 那个函数还可以是this::getById
+//        Shop shop1 = cacheClient.
+//                queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+
 
         // 使用互斥锁解决缓存击穿
 //        Shop shop = queryWithMutex(id);
 //        return Result.ok(shop);
 
         // 使用逻辑缓存解决缓存击穿
-        Shop shop = queryWithLogicCache(id);
-        return Result.ok(shop);
+//        Shop shop = queryWithLogicCache(id);
+//        return Result.ok(shop);
+
+        Shop shop1 = cacheClient.queryWithLogicCache(CACHE_SHOP_KEY, LOCK_SHOP_KEY, 1L, Shop.class, this::getById, 10L, TimeUnit.SECONDS);
+        return Result.ok(shop1);
     }
 
     /**
