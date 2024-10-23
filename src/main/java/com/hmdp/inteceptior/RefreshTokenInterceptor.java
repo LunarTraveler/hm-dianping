@@ -47,8 +47,8 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
         UserDTO userDTO = BeanUtil.fillBeanWithMap(userMap, new UserDTO(), false);
         UserHolder.saveUser(userDTO);
 
-        // 刷新过期时间为30分钟
-        stringRedisTemplate.expire(LOGIN_USER_KEY + token, 30, TimeUnit.MINUTES);
+        // 刷新过期时间为30分钟（为了方便测试，这里的话也就先不刷新了）
+        //stringRedisTemplate.expire(LOGIN_USER_KEY + token, 30, TimeUnit.MINUTES);
 
         return true;
     }
