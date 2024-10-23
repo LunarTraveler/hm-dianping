@@ -29,7 +29,7 @@ public class MvcConfiguration implements WebMvcConfigurer {
                         "/blog/hot",
                         "/shop/**",
                         "/shop-type/list",
-                        "voucher/**");
+                        "/voucher/**");
 
     }
 }
