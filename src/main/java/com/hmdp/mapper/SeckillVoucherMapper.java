@@ -2,6 +2,7 @@ package com.hmdp.mapper;
 
 import com.hmdp.entity.SeckillVoucher;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.hmdp.entity.VoucherOrder;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Update;
 
@@ -22,4 +23,6 @@ public interface SeckillVoucherMapper extends BaseMapper<SeckillVoucher> {
     @Update("update hm_dianping.tb_seckill_voucher set stock = stock - 1 where voucher_id = #{voucherId} and stock = #{stock}")
     int updateWithDecreaseStockOptimistic(SeckillVoucher seckillVoucher);
 
+    @Update("update hm_dianping.tb_seckill_voucher set stock = stock - 1 where voucher_id = #{voucherId} and stock > 0")
+    int decreaseStock(VoucherOrder voucherOrder);
 }
