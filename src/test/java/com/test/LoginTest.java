@@ -36,7 +36,7 @@ public class LoginTest {
 
         List<String> lines = new ArrayList<>();
 
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 4; i < 1004; i++) {
             String token = UUID.randomUUID().toString(true);
             String tokenKey = LOGIN_USER_KEY + token;
             lines.add(token);

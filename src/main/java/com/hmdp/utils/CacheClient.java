@@ -28,7 +28,7 @@ public class CacheClient {
     private final StringRedisTemplate stringRedisTemplate;
 
     // 线程池(大小为10)
-    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
+    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newSingleThreadExecutor();
 
     /**
      * 将Java对象序列化为jsonString存储，并且可以设置过期时间ttl
@@ -87,7 +87,7 @@ public class CacheClient {
         T t = function.apply(id);
         // 数据库中不存在，返回错误信息
         if (t == null) {
-            stringRedisTemplate.opsForValue().set(key, null, CACHE_SHOP_NULL_TTL, TimeUnit.MINUTES);
+            stringRedisTemplate.opsForValue().set(key, "", CACHE_SHOP_NULL_TTL, TimeUnit.MINUTES);
             return null;
         }
         set(key, t, time, timeUnit);

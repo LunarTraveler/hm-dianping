@@ -47,6 +47,7 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
     @Override
     @Transactional
     public void addSeckillVoucher(Voucher voucher) {
+        // 秒杀优惠券是优惠券的超集合（包含了优惠券）
         // 保存优惠券
         save(voucher);
         // 保存秒杀信息

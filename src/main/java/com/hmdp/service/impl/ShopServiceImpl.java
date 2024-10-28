@@ -49,6 +49,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     // 线程池(大小为10)
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
+    // 单个线程就够用了
+    private static final ExecutorService CACHE_REBUILD_SINGLE_EXECUTOR = Executors.newSingleThreadExecutor();
+
     /**
      * 根据id查询商铺信息
      * 缓存穿透
@@ -190,7 +193,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
         // 获取到锁，另开一个线程帮我把数据更新写进redis中
         if (tryLock(lockKey)) {
-            CACHE_REBUILD_EXECUTOR.submit(() -> {
+            CACHE_REBUILD_SINGLE_EXECUTOR.submit(() -> {
                 try {
                     // 缓存重建
                     saveShopToRedis(id, LOCK_SHOP_TTL);

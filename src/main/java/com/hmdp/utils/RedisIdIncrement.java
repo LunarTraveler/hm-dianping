@@ -26,6 +26,7 @@ public class RedisIdIncrement {
         LocalDateTime now = LocalDateTime.now();
         long timestamp = now.toEpochSecond(ZoneOffset.UTC) - BEGIN_TIMESTAMP;
         // 第二步：生成一个序列号(这里使用redis锁的自增长,一天为单位)
+        // 同时也代表了每一天的营业单数
         String date = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
         long count = stringRedisTemplate.opsForValue().increment("increment:" + keyPrefix + ":" + date);
 
