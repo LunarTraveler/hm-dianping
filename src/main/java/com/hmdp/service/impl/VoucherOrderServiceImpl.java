@@ -94,15 +94,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 获取消息队列里的消息订单
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
                             Consumer.from("g1", "c1"),
-                            StreamReadOptions.empty().count(1).block(Duration.ofMinutes(2)),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
                             StreamOffset.create(queueName, ReadOffset.lastConsumed())
                     );
 
-                    // 解析出具体的信息并完成异步下单
-                    if (!list.isEmpty()) {
-                        VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(list.get(0).getValue(), new VoucherOrder(), true);
-                        handleVoucherOrder(voucherOrder);
+                    // 检查是否有消息，如果没有的话，那么就阻塞2秒防止cpu压力太大
+                    if (list == null || list.isEmpty()) {
+                        continue;
                     }
+
+                    // 解析出具体的信息并完成异步下单
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(list.get(0).getValue(), new VoucherOrder(), true);
+                    handleVoucherOrder(voucherOrder);
 
                     // 确认消息被执行
                     stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", list.get(0).getId());
@@ -181,6 +184,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // 判断有没有购买资格通过lua脚本，全部在redis中完成, 在redis中发送消息到stream消息队列中
         Long result = stringRedisTemplate.execute(SECKILL_SCRIPT, Collections.emptyList(),
                 String.valueOf(voucherId), String.valueOf(userId), String.valueOf(orderId));
+
         if (result != 0) {
             return Result.fail(result == 1 ? "库存不足" : "这个用户已经购买过了");
         }

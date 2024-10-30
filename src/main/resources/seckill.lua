@@ -3,7 +3,7 @@ local userId = ARGV[2]
 local orderId = ARGV[3]
 
 local stockKey = 'seckill:stock:' .. voucherId
-local orderKey = 'seckill:order:' .. userId
+local orderKey = 'seckill:order:' .. voucherId
 
 if (tonumber(redis.call('get', stockKey)) <= 0) then
     -- 库存不足返回1
