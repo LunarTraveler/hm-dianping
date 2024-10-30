@@ -1,29 +1,29 @@
 package com.hmdp.service.impl;
 
-import cn.hutool.core.util.BooleanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.ScrollResult;
 import com.hmdp.entity.Blog;
+import com.hmdp.entity.Follow;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.BlogMapper;
+import com.hmdp.mapper.FollowMapper;
 import com.hmdp.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import static com.hmdp.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -43,8 +43,11 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Resource
     private IUserService userService;
 
-    @Autowired
+    @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private FollowMapper followMapper;
 
     /**
      * 查询热度最高的10（点赞量）条博客
@@ -62,7 +65,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         List<Blog> records = page.getRecords();
         // 查询用户
         records.forEach(blog ->{
+            // 查询设置博客对应的用户信息
             queryBlogUser(blog);
+            // 设置当前的用户是否点赞过这个博客
             setBlogLiked(blog);
         });
         return Result.ok(records);
@@ -80,14 +85,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             return Result.fail("博客不存在");
         }
 
+        // 查询设置博客对应的用户信息
         queryBlogUser(blog);
+        // 设置当前的用户是否点赞过这个博客
         setBlogLiked(blog);
 
         return Result.ok(blog);
     }
 
     /**
-     * 查询博客对应的用户信息
+     * 查询设置博客对应的用户信息
      * @param blog
      */
     private void queryBlogUser(Blog blog) {
@@ -103,37 +110,114 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
      */
     private void setBlogLiked(Blog blog) {
         Long userId = UserHolder.getUser().getId();
-        Double score = stringRedisTemplate.opsForZSet().score(BLOG_LIKED_KEY + userId, userId.toString());
+        Double score = stringRedisTemplate.opsForZSet().score(BLOG_LIKED_KEY + blog.getId(), userId.toString());
         blog.setIsLike(score != null);
     }
 
     /**
      * 点赞功能
-     * @param id
+     * @param blogId
      * @return
      */
     @Override
-    public Result likeBlog(Long id) {
+    public Result likeBlog(Long blogId) {
         Long userId = UserHolder.getUser().getId();
+        String key = BLOG_LIKED_KEY + blogId;
 
-        // 判断他是否点赞过了(用过redis中的set集合数据类型)
-        Double score = stringRedisTemplate.opsForZSet().score(BLOG_LIKED_KEY + userId, userId.toString());
+        // 判断他是否点赞过了(用过redis中的zset集合数据类型)
+        Double score = stringRedisTemplate.opsForZSet().score(key, userId.toString());
 
         if (score == null) {
             int updateRow = blogMapper.update(null, new LambdaUpdateWrapper<Blog>()
-                    .setSql("liked = liked + 1").eq(Blog::getId, id));
+                    .setSql("liked = liked + 1").eq(Blog::getId, blogId));
             if (updateRow > 0) {
-                stringRedisTemplate.opsForZSet().add(BLOG_LIKED_KEY + userId, userId.toString(), System.currentTimeMillis());
+                stringRedisTemplate.opsForZSet().add(key, userId.toString(), System.currentTimeMillis());
             }
         } else {
             int updateRow = blogMapper.update(null, new LambdaUpdateWrapper<Blog>()
-                    .setSql("liked = liked - 1").eq(Blog::getId, id));
+                    .setSql("liked = liked - 1").eq(Blog::getId, blogId));
             if (updateRow > 0) {
-                stringRedisTemplate.opsForZSet().remove(BLOG_LIKED_KEY + userId, userId.toString());
+                stringRedisTemplate.opsForZSet().remove(key, userId.toString());
             }
         }
 
         return Result.ok();
+    }
+
+    @Override
+    public Result queryBlogByUserId(long id, Integer current) {
+        Page<Blog> page = new Page<>(current, SystemConstants.MAX_PAGE_SIZE);
+        page = blogMapper.selectPage(page, new LambdaQueryWrapper<Blog>()
+                .eq(Blog::getUserId, id));
+        return Result.ok(page.getRecords());
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        Long userId = UserHolder.getUser().getId();
+        blog.setUserId(userId);
+
+        int insertRow = blogMapper.insert(blog);
+        if (insertRow == 0) {
+            return Result.fail("新增博客失败");
+        }
+
+        // 推送这篇博客给所有关注的粉丝
+        List<Follow> follows = followMapper.selectList(new LambdaQueryWrapper<Follow>()
+                .eq(Follow::getFollowUserId, userId));
+        for (Follow follow : follows) {
+            Long followUserId = follow.getUserId();
+            // 消息发送到每一个用户的feed-box（是以zset为数据结构的,为了方便滚动分页）
+            stringRedisTemplate.opsForZSet().add(FEED_BOX_KEY + followUserId, blog.getId().toString(), System.currentTimeMillis());
+        }
+
+        // 返回id
+        return Result.ok(blog.getId());
+    }
+
+    @Override
+    public Result queryBlogOfFollow(Long lastMinTimeStamp, Integer offset) {
+        Long userId = UserHolder.getUser().getId();
+
+        // 查询对应的feed-box查看里面的信件（是以滚动分页查询的方式）
+        // ZREVRANGESCORE key max min LIMIT offset count
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(FEED_BOX_KEY + userId, 0, lastMinTimeStamp, offset, SCROLL_PAGE_SIZE);
+        if (typedTuples == null || typedTuples.isEmpty()) {
+            return Result.ok();
+        }
+
+        // 结果封装为ScrollResult(list<T>, minTimeStamp, offset)
+        List<Long> ids = new ArrayList<>(typedTuples.size());
+        long minTimeStamp = 0L;
+        int newOffset = 1;
+        for (ZSetOperations.TypedTuple<String> tuple : typedTuples) {
+            ids.add(Long.valueOf(tuple.getValue()));
+            long curTimeStamp = tuple.getScore().longValue();
+            if (curTimeStamp == minTimeStamp) {
+                newOffset++;
+            } else {
+                minTimeStamp = curTimeStamp;
+                newOffset = 1;
+            }
+        }
+
+        // 需要设置相应的信息为了前端的展示效果所需的信息
+        List<Blog> blogList = blogMapper.selectList(new LambdaQueryWrapper<Blog>()
+                .in(Blog::getId, ids)
+                .orderByDesc(Blog::getId));
+        blogList.forEach(blog -> {
+            // 查询设置博客对应的用户信息
+            queryBlogUser(blog);
+            // 设置当前的用户是否点赞过这个博客
+            setBlogLiked(blog);
+        });
+
+        ScrollResult<Blog> scrollResult = new ScrollResult<>();
+        scrollResult.setList(blogList);
+        scrollResult.setLastId(minTimeStamp);
+        scrollResult.setOffset(newOffset);
+        return Result.ok(scrollResult);
     }
 
 

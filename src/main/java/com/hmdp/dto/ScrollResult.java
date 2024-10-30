@@ -1,12 +1,13 @@
 package com.hmdp.dto;
 
+import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
 
 @Data
-public class ScrollResult {
-    private List<?> list;
-    private Long minTime;
+public class ScrollResult<T> {
+    private List<T> list;
+    private Long lastId;
     private Integer offset;
 }
