@@ -8,6 +8,6 @@ import java.util.List;
 @Data
 public class ScrollResult<T> {
     private List<T> list;
-    private Long lastId;
+    private Long minTime;
     private Integer offset;
 }

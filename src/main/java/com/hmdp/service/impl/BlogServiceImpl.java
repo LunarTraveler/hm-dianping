@@ -215,7 +215,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
         ScrollResult<Blog> scrollResult = new ScrollResult<>();
         scrollResult.setList(blogList);
-        scrollResult.setLastId(minTimeStamp);
+        scrollResult.setMinTime(minTimeStamp);
         scrollResult.setOffset(newOffset);
         return Result.ok(scrollResult);
     }
