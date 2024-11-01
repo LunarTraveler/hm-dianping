@@ -4,6 +4,8 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.json.JSON;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdp.dto.Result;
@@ -14,17 +16,23 @@ import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
+import com.hmdp.utils.SystemConstants;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.geo.*;
+import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.*;
+import static com.hmdp.utils.SystemConstants.DEFAULT_PAGE_SIZE;
 
 /**
  * <p>
@@ -254,5 +262,59 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         stringRedisTemplate.delete(CACHE_SHOP_KEY + shop.getId());
         return Result.ok();
     }
+
+    @Override
+    public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
+        if (x == null || y == null) {
+            // 根据类型分页查询
+            Page<Shop> page = new Page<>(current, DEFAULT_PAGE_SIZE);
+            page = shopMapper.selectPage(page, new LambdaQueryWrapper<Shop>()
+                    .eq(Shop::getTypeId, typeId));
+            // 返回数据
+            return Result.ok(page.getRecords());
+        }
+
+        // geo本质是一种zset数据类型，进行一个传统的分页并按照距离的远近来排序
+        int from = (current - 1) * DEFAULT_PAGE_SIZE;
+        int to = from + DEFAULT_PAGE_SIZE;
+        String key = SHOP_GEO_KEY + typeId;
+
+        // GEOSEARCH key BYLONLAT x y BYRADIUS 5000 WITHDISTANCE
+        // 从redis中筛选出符合条件的geo [0 to]
+        GeoResults<RedisGeoCommands.GeoLocation<String>> results = stringRedisTemplate.opsForGeo().search(
+                key, GeoReference.fromCoordinate(x, y), new Distance(5000),
+                RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(to));
+        if (results == null) {
+            return Result.ok(Collections.emptyList());
+        }
+
+        List<GeoResult<RedisGeoCommands.GeoLocation<String>>> list = results.getContent();
+        if (list.size() <= from) {
+            return Result.ok(Collections.emptyList());
+        }
+        List<Long> ids = new ArrayList<>(list.size());
+        Map<String, Distance> shopIdToDistance = new HashMap<>(list.size());
+
+        // 截取[from to]这一页的全部商铺信息
+        list.stream().skip(from).forEach(geoResult -> {
+            // 获取商铺id
+            String shopIdStr = geoResult.getContent().getName();
+            // 获取相对的距离
+            Distance distance = geoResult.getDistance();
+
+            ids.add(Long.parseLong(shopIdStr));
+            shopIdToDistance.put(shopIdStr, distance);
+        });
+
+        // 给查出的每一个shop都加上对应的distance信息
+        List<Shop> shopList = shopMapper.selectList(new LambdaQueryWrapper<Shop>()
+                .in(Shop::getId, ids).orderByDesc(Shop::getId));
+        shopList.forEach(shop -> {
+            shop.setDistance(shopIdToDistance.get(shop.getId().toString()).getValue());
+        });
+
+        return Result.ok(shopList);
+    }
+
 }
 

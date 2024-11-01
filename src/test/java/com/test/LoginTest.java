@@ -46,7 +46,6 @@ public class LoginTest {
             stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.DAYS);
         }
 
-        System.out.println(lines.size());
         Path path = Paths.get("D:/loginUser.txt");
         try {
             Files.write(path, lines, StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
