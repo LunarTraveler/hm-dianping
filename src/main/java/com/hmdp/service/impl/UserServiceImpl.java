@@ -13,14 +13,19 @@ import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
+import com.hmdp.utils.UserHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpSession;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -119,6 +124,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok(token);
     }
 
+    /**
+     * 根据用户id查询用户，返回不带有隐私信息
+     * @param id
+     * @return
+     */
     @Override
     public Result queryUserById(Long id) {
         User user = userMapper.selectById(id);
@@ -128,4 +138,58 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
         return Result.ok(userDTO);
     }
+
+    /**
+     * 签到功能
+     * @return
+     */
+    @Override
+    public Result sign() {
+        // 获取到当前用户和日期
+        Long userId = UserHolder.getUser().getId();
+        LocalDate now = LocalDate.now();
+        int day = now.getDayOfMonth();
+        String key = USER_SIGN_KEY + userId + now.format(DateTimeFormatter.ofPattern(":yyyy:MM"));
+
+        stringRedisTemplate.opsForValue().setBit(key, day - 1, true);
+        return Result.ok();
+    }
+
+    /**
+     * 统计连续签到的次数
+     * @return
+     */
+    @Override
+    public Result countSign() {
+        // 获取到当前用户和日期
+        Long userId = UserHolder.getUser().getId();
+        LocalDate now = LocalDate.now();
+        int day = now.getDayOfMonth();
+        String key = USER_SIGN_KEY + userId + now.format(DateTimeFormatter.ofPattern(":yyyy:MM"));
+
+        List<Long> bitField = stringRedisTemplate.opsForValue().bitField(key, 
+                BitFieldSubCommands.create()
+                        .get(BitFieldSubCommands.BitFieldType.unsigned(day)).valueAt(0));
+        if (bitField == null || bitField.isEmpty()) {
+            return Result.ok(0);
+        }
+
+        Long bitList = bitField.get(0);
+        if (bitList == null || bitList == 0) {
+            return Result.ok(0);
+        }
+
+        int countBit = 0;
+        while (bitList > 0) {
+            if ((bitList & 1) == 0) {
+                break;
+            }
+            countBit += 1;
+            // 无符号右移一位
+            bitList >>>= 1;
+        }
+        return Result.ok(countBit);
+    }
+
+
 }

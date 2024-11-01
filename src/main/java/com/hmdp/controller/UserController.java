@@ -80,4 +80,14 @@ public class UserController {
         return userService.queryUserById(id);
     }
 
+    @PostMapping("/sign")
+    public Result sign() {
+        return userService.sign();
+    }
+
+    @GetMapping("/sign/count")
+    public Result countSign() {
+        return userService.countSign();
+    }
+
 }
