@@ -50,6 +50,7 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         // 秒杀优惠券是优惠券的超集合（包含了优惠券）
         // 保存优惠券
         save(voucher);
+
         // 保存秒杀信息
         SeckillVoucher seckillVoucher = new SeckillVoucher();
         seckillVoucher.setVoucherId(voucher.getId());
@@ -57,6 +58,7 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         seckillVoucher.setBeginTime(voucher.getBeginTime());
         seckillVoucher.setEndTime(voucher.getEndTime());
         seckillVoucherService.save(seckillVoucher);
+
         // 活动结束自动删除
         long timeout = Duration.between(LocalDateTime.now(), voucher.getEndTime()).getSeconds();
         stringRedisTemplate.opsForValue().set(SECKILL_STOCK_KEY + voucher.getId(), voucher.getStock().toString(),

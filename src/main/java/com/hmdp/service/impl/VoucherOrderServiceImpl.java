@@ -36,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.Lock;
 
 import static com.hmdp.utils.RedisConstants.LOCK_ORDER_KEY;
 
@@ -75,7 +76,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     // private BlockingQueue<VoucherOrder> voucherOrderBlockingQueue = new ArrayBlockingQueue<>(1024 * 1024);
     // 一个异步的单线程处理任务线程
     private static final ExecutorService SECKILL_VOUCHER_EXECUTOR = Executors.newSingleThreadExecutor();
-    // 互获取到代理对象，这样每个线程都可以使用
+    // 获取到代理对象，这样每个线程都可以使用
     private IVoucherOrderService proxy;
 
     @PostConstruct
@@ -122,7 +123,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private void handleVoucherOrder(VoucherOrder voucherOrder) {
         Long userId = voucherOrder.getUserId();
         // 获取锁对象
-        // SimpleRedisLock redisLock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
         RLock lock = redissonClient.getLock(LOCK_ORDER_KEY + userId);
 
         // 这里默认的是重试时间为不重试（-1） 存活时间为30秒

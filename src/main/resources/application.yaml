@@ -11,6 +11,7 @@ spring:
       driver-class-name: com.mysql.cj.jdbc.Driver
   redis:
     host: 127.0.0.1
+    #host: 121.40.170.167 (远程服务器地址，目前有redis, rabbitmq) ... 也可以把mysql加进去
     port: 6379
     password: 123456
 #    lettuce:
