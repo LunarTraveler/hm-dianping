@@ -56,4 +56,11 @@ public interface IBlogService extends IService<Blog> {
      * @return
      */
     Result queryBlogOfFollow(Long lastMinTimeStamp, Integer offset);
+
+    /**
+     * 查询博客点赞排行榜
+     * @param id
+     * @return
+     */
+    Result queryBlogLikesById(Long id);
 }

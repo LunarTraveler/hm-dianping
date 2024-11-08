@@ -1,10 +1,13 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.ScrollResult;
+import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Blog;
 import com.hmdp.entity.Follow;
 import com.hmdp.entity.User;
@@ -13,6 +16,7 @@ import com.hmdp.mapper.FollowMapper;
 import com.hmdp.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import org.springframework.context.annotation.Lazy;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.hmdp.utils.RedisConstants.*;
 
@@ -218,6 +223,29 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         scrollResult.setMinTime(minTimeStamp);
         scrollResult.setOffset(newOffset);
         return Result.ok(scrollResult);
+    }
+
+    @Override
+    public Result queryBlogLikesById(Long id) {
+        String key = RedisConstants.BLOG_LIKED_KEY + id;
+        //查询top5的点赞用户
+        Set<String> top5 = stringRedisTemplate.opsForZSet().range(key, 0, 6);
+        if (top5==null||top5.isEmpty()){
+            return Result.ok(Collections.emptyList());
+        }
+        //解析出用户id
+        List<Long> userIds = top5.stream().map(Long::valueOf).collect(Collectors.toList());
+        String join = StrUtil.join(",", userIds);
+        //根据id查询用户
+        List<UserDTO> userDTOS = userService.lambdaQuery()
+                .in(User::getId,userIds)
+                .last("order by field(id,"+join+")")
+                .list()
+                .stream().map(user ->
+                        BeanUtil.copyProperties(user, UserDTO.class)
+                ).collect(Collectors.toList());
+        //返回
+        return Result.ok(userDTOS);
     }
 
 

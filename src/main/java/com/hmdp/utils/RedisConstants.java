@@ -14,6 +14,7 @@ public class RedisConstants {
 
     public static final String LOCK_SHOP_KEY = "lock:shop:";
     public static final String LOCK_ORDER_KEY = "lock:order:";
+    public static final String LOCK_MSG_KEY = "lock:message:";
     public static final Long LOCK_SHOP_TTL = 10L;
 
     public static final String SECKILL_STOCK_KEY = "seckill:stock:";
@@ -24,4 +25,5 @@ public class RedisConstants {
 
     public static final String FOLLOW_LIST_KEY = "follow:list:";
     public static final Integer SCROLL_PAGE_SIZE = 3;
+
 }

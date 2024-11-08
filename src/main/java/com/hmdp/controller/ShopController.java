@@ -67,7 +67,7 @@ public class ShopController {
      * @param current 页码
      * @return 商铺列表
      */
-    @GetMapping("/of/type")
+    // @GetMapping("/of/type")
     public Result queryShopByType(
             @RequestParam("typeId") Integer typeId,
             @RequestParam(value = "current", defaultValue = "1") Integer current,
@@ -78,7 +78,7 @@ public class ShopController {
     }
 
     /**
-     * 根据商铺名称关键字分页查询商铺信息
+     * 根据商铺名称关键字分页查询商铺信息(这里使用到了geo这种数据结构实在redis6才有的)
      * @param name 商铺名称关键字
      * @param current 页码
      * @return 商铺列表

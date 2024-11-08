@@ -28,6 +28,7 @@ public class LoginTest {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    // 1000个用户的一次请求
     @Test
     public void GenerateUser() {
         Map<String, Object> userMap = new HashMap<>();
@@ -52,7 +53,35 @@ public class LoginTest {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
 
+    // 500个用户，每个用户请求三次
+    @Test
+    public void GenerateUser1() {
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("nickName", "******");
+        userMap.put("icon", null);
+
+        List<String> lines = new ArrayList<>();
+
+        for (int i = 4; i < 504; i++) {
+            String token = UUID.randomUUID().toString(true);
+            String tokenKey = LOGIN_USER_KEY + token;
+            for (int j = 0; j < 3; j++) {
+                lines.add(token);
+            }
+            userMap.put("id", String.valueOf(i));
+            stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+            // 这里应该设置为秒的，但是为了不反复测试直接设置为天
+            stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.DAYS);
+        }
+
+        Path path = Paths.get("D:/loginUser3.txt");
+        try {
+            Files.write(path, lines, StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
 

@@ -38,11 +38,6 @@ public class SeckillVoucher implements Serializable {
     private Integer stock;
 
     /**
-     * 创建时间
-     */
-    private LocalDateTime createTime;
-
-    /**
      * 生效时间
      */
     private LocalDateTime beginTime;
@@ -51,6 +46,11 @@ public class SeckillVoucher implements Serializable {
      * 失效时间
      */
     private LocalDateTime endTime;
+
+    /**
+     * 创建时间
+     */
+    private LocalDateTime createTime;
 
     /**
      * 更新时间

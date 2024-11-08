@@ -19,7 +19,7 @@ public class RedisIdIncrement {
     // 这个代表上线的那个时间点，这样的话这个系统可以使用69年
     public long BEGIN_TIMESTAMP = 1729696772L;
 
-    public int COUNT_BITS = 32;
+    public int COUNT_BITS = 12;
 
     public Long nextId(String keyPrefix) {
         // 第一步：生成一个时间戳
@@ -30,7 +30,7 @@ public class RedisIdIncrement {
         String date = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
         long count = stringRedisTemplate.opsForValue().increment("increment:" + keyPrefix + ":" + date);
 
-        long id = id = count << COUNT_BITS | timestamp;
+        long id = timestamp << COUNT_BITS | count;
         // 拼接起来
         return Long.valueOf(id);
     }
