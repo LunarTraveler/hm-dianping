@@ -1,6 +1,8 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.User;
@@ -8,6 +10,7 @@ import com.hmdp.entity.Voucher;
 import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.SeckillVoucherMapper;
 import com.hmdp.mapper.VoucherOrderMapper;
+import com.hmdp.rabbitmq.Publisher;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -66,13 +69,24 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    private final Publisher publisher;
+
     public static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
-    // 加载lua脚本
+    public static final DefaultRedisScript<Long> SECKILL_WITH_RABBITMQ_SCRIPT;
+
+    // 加载seckill.lua脚本
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
+    }
+
+    // 加载seckillWithRabbitmq.lua脚本
+    static {
+        SECKILL_WITH_RABBITMQ_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_WITH_RABBITMQ_SCRIPT.setLocation(new ClassPathResource("seckillWithRabbitmq.lua"));
+        SECKILL_WITH_RABBITMQ_SCRIPT.setResultType(Long.class);
     }
 
     // 一个单线程执行下单任务
@@ -202,8 +216,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
      * @param voucherId
      * @return
      */
-    @Override
-    public Result seckillVoucher(Long voucherId) {
+    // @Override
+    public Result seckillVoucher2(Long voucherId) {
         // 这里就不判断活动是否在规定时间了，直接能访问就是开启之后了
         Long userId = UserHolder.getUser().getId();
         Long orderId = redisIdIncrement.nextId("order");
@@ -220,122 +234,34 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         return Result.ok(orderId);
     }
 
-    /*
-    使用的jdk本身的阻塞队列实现的
+    /**
+     * 使用了rabbitmq消息队列来实现
+     * @param voucherId
+     * @return
+     */
     @Override
     public Result seckillVoucher(Long voucherId) {
         Long userId = UserHolder.getUser().getId();
-        // 判断有没有购买资格通过lua脚本，全部在redis中完成
-        Long result = stringRedisTemplate.execute(SECKILL_SCRIPT, Collections.emptyList(), String.valueOf(voucherId), String.valueOf(userId));
-        if (result != 0) {
-            return Result.fail(result == 1 ? "库存不足" : "这个用户已经购买过了");
-        }
         Long orderId = redisIdIncrement.nextId("order");
-        VoucherOrder voucherOrder = VoucherOrder.builder()
-                .voucherId(voucherId)
-                .userId(userId)
-                .id(orderId)
-                .build();
-        // TODO 可以通过一些消息队列来异步处理消息(jdk本身的阻塞队列， redis实现的队列， rebitemq队列)
-        voucherOrderBlockingQueue.add(voucherOrder);
-        proxy = (IVoucherOrderService) AopContext.currentProxy();
+
+        // 执行脚本进行资格的判断
+        Long result = stringRedisTemplate.execute(SECKILL_WITH_RABBITMQ_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString());
+        if (result != 0) {
+            return Result.fail(result == 1 ? "库存不足" : "不允许重复下单");
+        }
+
+        // 封装成订单对象
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setUserId(userId);
+        voucherOrder.setVoucherId(voucherId);
+        voucherOrder.setId(orderId);
+
+        // 加入rabbitmq消息队列(网络传输的数据格式是json)
+        publisher.sendSeckillMessage(voucherOrder);
+
         return Result.ok(orderId);
     }
-    */
-
-//    /**
-//     * 抢购优惠券(秒杀下单)
-//     * @param voucherId
-//     * @return
-//     */
-//    @Override
-//    public Result seckillVoucher(Long voucherId) {
-//        // 查询优惠券
-//        SeckillVoucher seckillVoucher = seckillVoucherMapper.selectById(voucherId);
-//
-//        // 对于异常情况的处理
-//        if (seckillVoucher.getBeginTime().isAfter(LocalDateTime.now())) {
-//            return Result.fail("活动尚未开始");
-//        }
-//        if (seckillVoucher.getEndTime().isBefore(LocalDateTime.now())) {
-//            return Result.fail("活动已经结束");
-//        }
-//        if (seckillVoucher.getStock() < 1) {
-//            return Result.fail("库存不足");
-//        }
-//
-////        Long userId = UserHolder.getUser().getId();
-////        synchronized (userId.toString().intern()) {
-////            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
-////            return proxy.createVoucherOrder(seckillVoucher);
-////        }
-//
-//        Long userId = UserHolder.getUser().getId();
-//        // 获取锁对象
-//        // SimpleRedisLock redisLock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
-//        RLock lock = redissonClient.getLock(LOCK_ORDER_KEY + userId);
-//
-//        // 这里默认的是重试时间为不重试（-1） 存活时间为30秒
-//        boolean isLock = lock.tryLock();
-//        if (!isLock) {
-//            return Result.fail("不允许重复下单");
-//        }
-//
-//        try {
-//            // 正常下单就行了
-//            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
-//            return proxy.createVoucherOrder(seckillVoucher);
-//        } finally {
-//            lock.unlock();
-//        }
-//
-//    }
-
-    /**
-     * 虽然加在方法上是可行的，但是粒度太大了，这样的话每一个用户都要排队了
-     * 但是我的本意是一个用户一单，也就是一个用户的多次访问要排队，所以要锁唯一标识用户的
-     * 这个锁的范围是要大于事务的范围，要在事务提交之后才释放锁，要不然又会有多个线程在锁没提交就进入
-     * @param seckillVoucher
-     * @return
-     */
-
-//    @Transactional
-//    public Result createVoucherOrder(SeckillVoucher seckillVoucher) {
-//        Long userId = UserHolder.getUser().getId();
-//        LambdaQueryWrapper<VoucherOrder> queryWrapper = new LambdaQueryWrapper<>();
-//        queryWrapper.eq(VoucherOrder::getUserId, userId).eq(VoucherOrder::getVoucherId, seckillVoucher.getVoucherId());
-//        long count = voucherOrderMapper.selectCount(queryWrapper);
-//
-//        if (count > 0) {
-//            return Result.fail("用户已经购买过了一次");
-//        }
-//
-//        // 解决超卖的问题（乐观锁， 悲观锁）
-//        // 1 悲观锁（其实是数据库在更新操作时，是会对修改的这几行做一个排他锁）
-//        // 这里库存的减少和数据库的更新最好是原子操作，这样是能够避免脏读和幻读
-//        // 扣减库存
-//        int result = seckillVoucherMapper.updateWithDecreaseStock(seckillVoucher);
-//        if (result == 0) {
-//            return Result.fail("库存不足");
-//        }
-//
-//        // 2 乐观锁（其实是不符合条件的认为是其他线程在修改，符合条件的一定是唯一在修改的）
-////        int result = seckillVoucherMapper.updateWithDecreaseStockOptimistic(seckillVoucher);
-////        if (result == 0) {
-////            return Result.fail("库存不足");
-////        }
-//
-//        // 生成订单(需要orderId, userId, voucherId)
-//        Long orderId = redisIdIncrement.nextId("order");
-//        VoucherOrder voucherOrder = new VoucherOrder();
-//        voucherOrder.setId(orderId);
-//        voucherOrder.setUserId(userId);
-//        voucherOrder.setVoucherId(orderId);
-//
-//        voucherOrderMapper.insert(voucherOrder);
-//        return Result.ok(orderId);
-//
-//    }
-
 
 }

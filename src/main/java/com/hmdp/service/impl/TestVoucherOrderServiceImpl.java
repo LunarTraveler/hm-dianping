@@ -2,11 +2,14 @@ package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.SeckillVoucherMapper;
 import com.hmdp.mapper.VoucherOrderMapper;
+import com.hmdp.rabbitmq.Publisher;
 import com.hmdp.utils.RedisIdIncrement;
 import com.hmdp.utils.UserHolder;
 import lombok.RequiredArgsConstructor;
@@ -54,13 +57,26 @@ public class TestVoucherOrderServiceImpl {
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    private final Publisher publisher;
+
+    private final ObjectMapper objectMapper;
+
     public static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
-    // 加载lua脚本
+    public static final DefaultRedisScript<Long> SECKILL_WITH_RABBITMQ_SCRIPT;
+
+    // 加载seckill.lua脚本
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
+    }
+
+    // 加载seckillWithRabbitmq.lua脚本
+    static {
+        SECKILL_WITH_RABBITMQ_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_WITH_RABBITMQ_SCRIPT.setLocation(new ClassPathResource("rabbitmq-seckill.lua"));
+        SECKILL_WITH_RABBITMQ_SCRIPT.setResultType(Long.class);
     }
 
     // 一个单线程执行下单任务
@@ -280,9 +296,27 @@ public class TestVoucherOrderServiceImpl {
      * @return
      */
     public Result seckillVoucher3(Long voucherId) {
+        Long userId = UserHolder.getUser().getId();
+        Long orderId = redisIdIncrement.nextId("order");
 
+        // 执行脚本进行资格的判断
+        Long result = stringRedisTemplate.execute(SECKILL_WITH_RABBITMQ_SCRIPT,
+                Collections.emptyList(),
+                voucherId, userId);
+        if (result != 0) {
+            return Result.fail(result == 1 ? "库存不足" : "不允许重复下单");
+        }
 
-        return null;
+        // 封装成订单对象
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setUserId(userId);
+        voucherOrder.setVoucherId(voucherId);
+        voucherOrder.setId(orderId);
+
+        // 加入rabbitmq消息队列(网络传输的数据格式是json)
+        publisher.sendSeckillMessage(voucherOrder);
+
+        return Result.ok(orderId);
     }
 
 
