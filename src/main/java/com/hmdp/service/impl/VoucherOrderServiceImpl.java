@@ -32,6 +32,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
+import com.google.common.util.concurrent.RateLimiter;
 
 import javax.annotation.PostConstruct;
 import java.time.Duration;
@@ -241,6 +242,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
      */
     @Override
     public Result seckillVoucher(Long voucherId) {
+        // 使用令牌桶进行限流
+        RateLimiter rateLimiter = RateLimiter.create(50.0, 2, TimeUnit.SECONDS);
+        if (!rateLimiter.tryAcquire(1, 100, TimeUnit.MILLISECONDS)) {
+            return Result.fail("目前网络正忙，请重试");
+        }
+
         Long userId = UserHolder.getUser().getId();
         Long orderId = redisIdIncrement.nextId("order");
 
