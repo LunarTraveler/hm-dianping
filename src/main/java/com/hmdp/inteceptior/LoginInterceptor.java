@@ -30,7 +30,7 @@ public class LoginInterceptor implements HandlerInterceptor {
      * @throws Exception
      */
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         // 这里就只有判断是否线程里有用户就行了，没有就拦截
         if (UserHolder.getUser() == null) {
             response.setStatus(401);

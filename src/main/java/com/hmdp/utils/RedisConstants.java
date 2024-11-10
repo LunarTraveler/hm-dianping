@@ -26,4 +26,11 @@ public class RedisConstants {
     public static final String FOLLOW_LIST_KEY = "follow:list:";
     public static final Integer SCROLL_PAGE_SIZE = 3;
 
+    public static final String LOGIN_COUNT_LIMIT_KEY = "limit:user:";
+    public static final String ONE_LEVER_LIMIT_KEY = "limit:one:";
+    public static final String TWO_LEVER_LIMIT_KEY = "limit:two:";
+
+    public static final Integer ONE_LEVER_LIMIT_TIME = 5;
+    public static final Integer TWO_LEVER_LIMIT_TIME = 30;
+
 }

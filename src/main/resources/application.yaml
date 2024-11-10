@@ -48,6 +48,10 @@ spring:
 #        multiplier: 1 # 失败倍数的累加时间
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  mail:
+    username: LunarTravel@163.com
+    password: SAswMwQerRNxUWve # 授权码
+    host: smtp.163.com
 mybatis-plus:
   type-aliases-package: com.hmdp.entity # 别名扫描包
 logging:

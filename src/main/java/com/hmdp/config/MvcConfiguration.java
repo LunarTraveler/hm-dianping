@@ -1,5 +1,6 @@
 package com.hmdp.config;
 
+import com.hmdp.inteceptior.LoginCodeInterceptor;
 import com.hmdp.inteceptior.LoginInterceptor;
 import com.hmdp.inteceptior.RefreshTokenInterceptor;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,8 @@ public class MvcConfiguration implements WebMvcConfigurer {
     private final LoginInterceptor loginInterceptor;
 
     private final RefreshTokenInterceptor refreshTokenInterceptor;
+
+    private final LoginCodeInterceptor loginCodeInterceptor;
 
     // 多拦截器有先后顺序问题，要么是编码先后，还可以是 .order(number is litter the order is bigger)
     @Override
@@ -30,6 +33,9 @@ public class MvcConfiguration implements WebMvcConfigurer {
                         "/shop/**",
                         "/shop-type/list",
                         "/voucher/**");
+
+        registry.addInterceptor(loginCodeInterceptor)
+                .addPathPatterns("/user/code");
 
     }
 }

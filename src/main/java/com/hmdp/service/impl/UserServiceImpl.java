@@ -12,18 +12,22 @@ import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.EmailSendUtil;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpSession;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,27 +53,103 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    private final EmailSendUtil emailSendUtil;
+
     /**
      * 发送手机验证码
      * @param phone
-     * @param session
      */
     @Override
-    public Result sendCode(String phone, HttpSession session) {
+    public Result sendPhoneCode(String phone) {
         // 验证手机号（这个其实要前端做就行了）
         if (RegexUtils.isPhoneInvalid(phone)) {
             return Result.fail("手机号格式错误");
         }
         // 生成验证码
         String code = RandomUtil.randomNumbers(6);
-        // 保存验证码到session中
-        // session.setAttribute("code", code);
+
         // 设置有限期为两分钟
         stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
+
         // 发送验证码（其实这里是通过手机验证码发送的，要调用第三方服务）
+        // emailSendUtil.sendEmailCode("2961478685@qq.com", code);
         log.info("发送验证码 : {}", code);
+
+        // 更新当前用户的发送验证码的次数
+        stringRedisTemplate.opsForZSet().add(LOGIN_COUNT_LIMIT_KEY + phone, String.valueOf(System.currentTimeMillis()), System.currentTimeMillis());
+
         return Result.ok();
     }
+
+    /**
+     * 发送邮箱验证码
+     * @param email
+     * @return
+     */
+    @Override
+    public Result sendMailCode(String email) {
+        // 定义常量
+        final String ONE_LEVEL_KEY = LOGIN_CODE_KEY + email + ":1";
+        final String TWO_LEVEL_KEY = LOGIN_CODE_KEY + email + ":2";
+        final String COUNT_KEY = LOGIN_COUNT_LIMIT_KEY + email;
+
+        // 对于一级限制的判断
+        String oneLevelLimit = stringRedisTemplate.opsForValue().get(ONE_LEVEL_KEY);
+        if ("1".equals(oneLevelLimit)) {
+            return Result.fail("您在过去5分钟之内3次验证失败，需要等5分钟后再请求");
+        }
+
+        // 对于二级限制的判断
+        String twoLevelLimit = stringRedisTemplate.opsForValue().get(TWO_LEVEL_KEY);
+        if ("1".equals(twoLevelLimit)) {
+            return Result.fail("您在过去30分钟之内5次验证失败，需要等30分钟后再请求");
+        }
+
+        // 检查一分钟之内发送验证码的次数
+        if (isLimitExceeded(COUNT_KEY, 1, 1)) {
+            return Result.fail("距离上次发送时间不足1分钟，请1分钟后重试");
+        }
+
+        // 检查过去5分钟的发送次数（一级限制）
+        if (isLimitExceeded(COUNT_KEY, 5, 3)) {
+            stringRedisTemplate.opsForValue().set(ONE_LEVEL_KEY, "1", 5, TimeUnit.MINUTES);
+            return Result.fail("您在过去5分钟之内3次验证失败，需要等5分钟后再请求");
+        }
+
+        // 检查过去30分钟的发送次数（二级限制）
+        if (isLimitExceeded(COUNT_KEY, 30, 5)) {
+            stringRedisTemplate.opsForValue().set(TWO_LEVEL_KEY, "1", 30, TimeUnit.MINUTES);
+            return Result.fail("您在过去30分钟之内5次验证失败，需要等30分钟后再请求");
+        }
+
+        // 再次确保邮箱格式的正确
+        if (RegexUtils.isEmailInvalid(email)) {
+            return Result.fail("邮箱格式错误");
+        }
+
+        // 生成6位数字验证码
+        String code = RandomUtil.randomNumbers(6);
+
+        // 保存到redis用于验证 ttl = 2分钟
+        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + email, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
+
+        // 发送验证码
+        emailSendUtil.sendEmailCode(email, code);
+
+        // 更新当前用户的发送验证码的次数
+        stringRedisTemplate.opsForZSet().add(COUNT_KEY, String.valueOf(System.currentTimeMillis()), System.currentTimeMillis());
+
+        return Result.ok();
+    }
+
+    // 判断是否超出限流次数
+    private boolean isLimitExceeded(String key, int minutes, int limit) {
+        long timeAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(minutes);
+        Long count = stringRedisTemplate.opsForZSet().count(key, timeAgo, System.currentTimeMillis());
+        return count != null && count >= limit;
+    }
+
+
 
     /**
      * 登录功能
